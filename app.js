@@ -43,6 +43,7 @@ function sumItems(obj) {
 }
 function getPurchaseCost(r) { return sumItems(r.purchaseItems); }
 function getSalesQty(r) { return sumItems(r.salesItems); }
+function hasAnySales(r) { return Object.values(r.salesItems || {}).some(v => Number(v) > 0); }
 function calcTotalRevenue(r) { return (Number(r.cash) || 0) + (Number(r.linePay) || 0) + (Number(r.uberEats) || 0); }
 function calcNetIncome(r) { return calcTotalRevenue(r) - getPurchaseCost(r); }
 
@@ -471,7 +472,13 @@ function EntryCard({ record: r, onEdit, onDelete }) {
         <EntryMini label="現金" value={r.cash} />
         <EntryMini label="進貨成本" value={getPurchaseCost(r)} />
         <EntryMini label="總收入" value={total} />
-        <EntryMini label="銷售份數" value={getSalesQty(r)} />
+        {hasAnySales(r) ? (
+          Object.entries(r.salesItems || {})
+            .filter(([, v]) => Number(v) > 0)
+            .map(([name, v]) => <EntryMini key={name} label={name} value={v} />)
+        ) : (
+          <EntryMini label="銷售份數" value={0} />
+        )}
       </div>
       {r.note && <div className="entry-note">備註：{r.note}</div>}
     </div>
