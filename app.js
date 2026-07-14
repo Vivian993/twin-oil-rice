@@ -165,6 +165,23 @@ export default function App() {
     });
   }, [persistPresets]);
 
+  const deletePurchasePreset = useCallback((name) => {
+    setPresets(prev => {
+      const next = { ...prev, purchaseNames: prev.purchaseNames.filter(n => n !== name) };
+      persistPresets(next);
+      return next;
+    });
+  }, [persistPresets]);
+
+  const deleteProductPreset = useCallback((name) => {
+    setPresets(prev => {
+      const { [name]: _omit, ...restUnits } = prev.productUnits;
+      const next = { ...prev, productNames: prev.productNames.filter(n => n !== name), productUnits: restUnits };
+      persistPresets(next);
+      return next;
+    });
+  }, [persistPresets]);
+
   const upsertRecord = useCallback((data) => {
     setRecords(prev => {
       const exists = prev.some(r => r.id === data.id);
@@ -249,6 +266,8 @@ export default function App() {
           presets={presets}
           onAddPurchasePreset={addPurchasePreset}
           onAddProductPreset={addProductPreset}
+          onDeletePurchasePreset={deletePurchasePreset}
+          onDeleteProductPreset={deleteProductPreset}
           onClose={() => setFormState(null)}
           onSave={(data) => { upsertRecord(data); sound.save(); setFormState(null); showToast(formState.mode === 'add' ? '已新增一筆記帳' : '已儲存修改'); }}
         />
@@ -625,7 +644,7 @@ const REQUIRED_KEYS = ['uberEats', 'linePay', 'cash'];
 
 function zeroFilled(names) { return Object.fromEntries(names.map(n => [n, 0])); }
 
-function EntryFormModal({ state, presets, onAddPurchasePreset, onAddProductPreset, onClose, onSave }) {
+function EntryFormModal({ state, presets, onAddPurchasePreset, onAddProductPreset, onDeletePurchasePreset, onDeleteProductPreset, onClose, onSave }) {
   const initial = state.mode === 'edit'
     ? {
         ...state.data,
@@ -664,6 +683,26 @@ function EntryFormModal({ state, presets, onAddPurchasePreset, onAddProductPrese
     const unit = window.prompt('這個商品的單位是？（例如：份、瓶、杯）', '份') || '份';
     onAddProductPreset(trimmed, unit);
     setForm(f => ({ ...f, salesItems: { ...f.salesItems, [trimmed]: f.salesItems[trimmed] ?? 0 } }));
+  }
+
+  function handleDeletePurchaseItem(name) {
+    if (!window.confirm(`確定要刪除「${name}」這個進貨項目嗎？\n之後新增記帳將不會再看到它，但過去的紀錄不會受影響。`)) return;
+    onDeletePurchasePreset(name);
+    setForm(f => {
+      const next = { ...f.purchaseItems };
+      delete next[name];
+      return { ...f, purchaseItems: next };
+    });
+  }
+
+  function handleDeleteProductItem(name) {
+    if (!window.confirm(`確定要刪除「${name}」這個商品嗎？\n之後新增記帳將不會再看到它，但過去的紀錄不會受影響。`)) return;
+    onDeleteProductPreset(name);
+    setForm(f => {
+      const next = { ...f.salesItems };
+      delete next[name];
+      return { ...f, salesItems: next };
+    });
   }
 
   function missingFields() {
@@ -707,7 +746,7 @@ function EntryFormModal({ state, presets, onAddPurchasePreset, onAddProductPrese
           </div>
           <div className="stepper-grid">
             {presets.productNames.map(name => (
-              <Stepper key={name} label={name} unit={productUnits[name] || '份'} value={form.salesItems[name] ?? 0} onChange={v => setSalesItem(name, v)} />
+              <Stepper key={name} label={name} unit={productUnits[name] || '份'} value={form.salesItems[name] ?? 0} onChange={v => setSalesItem(name, v)} onDelete={() => handleDeleteProductItem(name)} />
             ))}
           </div>
           <div className="sum-line"><span>本筆銷售加總</span><b>{salesQty} 份/瓶</b></div>
@@ -728,7 +767,17 @@ function EntryFormModal({ state, presets, onAddPurchasePreset, onAddProductPrese
           </div>
           <div className="form-grid">
             {presets.purchaseNames.map(name => (
-              <FormField key={name} label={name}>
+              <FormField
+                key={name}
+                label={
+                  <span className="field-label-row">
+                    <span>{name}</span>
+                    <button type="button" className="field-del-btn" onClick={() => handleDeletePurchaseItem(name)} aria-label={`刪除${name}`}>
+                      <X size={12} />
+                    </button>
+                  </span>
+                }
+              >
                 <MoneyInput value={form.purchaseItems[name] ?? 0} onChange={v => setPurchaseItem(name, v)} accentIfNonZero />
               </FormField>
             ))}
@@ -783,7 +832,7 @@ function MoneyInput({ value, onChange, accentIfNonZero }) {
   );
 }
 
-function Stepper({ label, unit, value, onChange }) {
+function Stepper({ label, unit, value, onChange, onDelete }) {
   const v = Number(value) || 0;
   function bump(delta) {
     sound.step();
@@ -791,7 +840,14 @@ function Stepper({ label, unit, value, onChange }) {
   }
   return (
     <div className="stepper">
-      <div className="stepper-label">{label}</div>
+      <div className="stepper-label field-label-row">
+        <span>{label}</span>
+        {onDelete && (
+          <button type="button" className="field-del-btn" onClick={onDelete} aria-label={`刪除${label}`}>
+            <X size={12} />
+          </button>
+        )}
+      </div>
       <div className="stepper-control">
         <span className="stepper-value">{v} <small>{unit}</small></span>
         <div className="stepper-arrows">
@@ -1080,6 +1136,9 @@ function GlobalStyle() {
 
       .stepper-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
       .stepper-label { font-size: 12px; color: var(--ink-soft); margin-bottom: 5px; }
+      .field-label-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+      .field-del-btn { background: none; border: none; color: var(--ink-soft); padding: 2px; line-height: 0; cursor: pointer; border-radius: 6px; }
+      .field-del-btn:hover { color: var(--danger); background: #F6E4DD; }
       .stepper-control { display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--line); background: var(--paper); border-radius: 10px; padding: 8px 10px; }
       .stepper-value { font-size: 15px; font-weight: 700; }
       .stepper-value small { font-size: 11px; font-weight: 400; color: var(--ink-soft); }
