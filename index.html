@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>雙子油飯記帳</title>
+<meta name="description" content="雙子油飯每日記帳 App" />
+
+<!-- PWA -->
+<link rel="manifest" href="./manifest.json" />
+<meta name="theme-color" content="#7A5B3E" />
+<link rel="icon" href="./icons/favicon-32.png" sizes="32x32" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="雙子油飯" />
+
+<style>
+  html, body { margin: 0; padding: 0; background: #F6F1E7; }
+  #root { min-height: 100vh; }
+  #boot-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family: -apple-system, sans-serif; color:#93816F; }
+</style>
+
+<!-- window.storage shim backed by localStorage, so the app code (originally written -->
+<!-- for the Claude Artifact storage API) works unmodified in a normal browser.       -->
+<script>
+  (function () {
+    function nsKey(key, shared) {
+      // "shared" data is stored under its own namespace so it doesn't collide
+      // with any future personal-scoped keys of the same name.
+      return (shared ? 'shared:' : 'local:') + key;
+    }
+    window.storage = {
+      async get(key, shared) {
+        try {
+          const raw = localStorage.getItem(nsKey(key, shared));
+          if (raw === null) return null;
+          return { key, value: raw, shared: !!shared };
+        } catch (e) {
+          return null;
+        }
+      },
+      async set(key, value, shared) {
+        try {
+          localStorage.setItem(nsKey(key, shared), value);
+          return { key, value, shared: !!shared };
+        } catch (e) {
+          return null;
+        }
+      },
+      async delete(key, shared) {
+        try {
+          localStorage.removeItem(nsKey(key, shared));
+          return { key, deleted: true, shared: !!shared };
+        } catch (e) {
+          return null;
+        }
+      },
+      async list(prefix, shared) {
+        try {
+          const p = (shared ? 'shared:' : 'local:') + (prefix || '');
+          const keys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(p)) keys.push(k.slice(shared ? 7 : 6));
+          }
+          return { keys, prefix, shared: !!shared };
+        } catch (e) {
+          return null;
+        }
+      },
+    };
+  })();
+</script>
+
+<!-- Import map: load React / ReactDOM / lucide-react as plain ES modules from a CDN,  -->
+<!-- no build step required. -->
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react"
+  }
+}
+</script>
+
+<!-- Babel Standalone: transforms the JSX in app.js in the browser -->
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"><div id="boot-loading">載入中…</div></div>
+
+  <script type="text/babel" data-type="module" data-presets="react" src="./app.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(() => {
+          /* offline support is optional; ignore registration failures */
+        });
+      });
+    }
+  </script>
+</body>
+</html>
