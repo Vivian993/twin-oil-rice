@@ -199,6 +199,36 @@ export default function App() {
     });
   }, [persist]);
 
+  const importBackup = useCallback((data) => {
+    try {
+      const incomingRecords = Array.isArray(data.records) ? data.records : [];
+      const incomingPresets = data.presets && typeof data.presets === 'object' ? data.presets : null;
+
+      setRecords(prev => {
+        const map = new Map(prev.map(r => [r.id, r]));
+        incomingRecords.forEach(r => { if (r && r.id) map.set(r.id, r); });
+        const next = Array.from(map.values());
+        persist(next);
+        return next;
+      });
+
+      if (incomingPresets) {
+        setPresets(prev => {
+          const mergedPurchaseNames = Array.from(new Set([...(prev.purchaseNames || []), ...(incomingPresets.purchaseNames || [])]));
+          const mergedProductNames = Array.from(new Set([...(prev.productNames || []), ...(incomingPresets.productNames || [])]));
+          const mergedUnits = { ...(prev.productUnits || {}), ...(incomingPresets.productUnits || {}) };
+          const next = { purchaseNames: mergedPurchaseNames, productNames: mergedProductNames, productUnits: mergedUnits };
+          persistPresets(next);
+          return next;
+        });
+      }
+
+      showToast(`已還原 ${incomingRecords.length} 筆記帳資料`);
+    } catch (e) {
+      showToast('備份檔案格式錯誤，無法還原');
+    }
+  }, [persist, persistPresets, showToast]);
+
   const byDate = useMemo(() => {
     const map = {};
     for (const r of records) {
@@ -249,8 +279,10 @@ export default function App() {
             <ReportView
               cursor={reportCursor} setCursor={setReportCursor}
               records={records} byDate={byDate}
+              presets={presets}
               keyword={keyword} setKeyword={setKeyword}
               onPrint={() => setPrintOpen(true)}
+              onImportBackup={importBackup}
               onEdit={openEdit}
               onDelete={(r) => setDeleteTarget(r)}
             />
@@ -515,8 +547,9 @@ function EntryMini({ label, value }) {
 
 /* ===================== 報表 ===================== */
 
-function ReportView({ cursor, setCursor, records, byDate, keyword, setKeyword, onPrint, onEdit, onDelete }) {
+function ReportView({ cursor, setCursor, records, byDate, presets, keyword, setKeyword, onPrint, onImportBackup, onEdit, onDelete }) {
   const { y, m } = cursor;
+  const fileInputRef = useRef(null);
 
   function shift(delta) {
     sound.tap();
@@ -583,6 +616,46 @@ function ReportView({ cursor, setCursor, records, byDate, keyword, setKeyword, o
     URL.revokeObjectURL(url);
   }
 
+  function exportBackupJSON() {
+    sound.tap();
+    const payload = {
+      type: 'twin-oil-rice-backup',
+      exportedAt: new Date().toISOString(),
+      records,
+      presets,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `雙子油飯完整備份_${todayStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function triggerImport() {
+    sound.tap();
+    if (fileInputRef.current) fileInputRef.current.click();
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        onImportBackup(data);
+      } catch (err) {
+        window.alert('這不是有效的備份檔案（.json），無法匯入。');
+      }
+    };
+    reader.readAsText(file);
+  }
+
   return (
     <div>
       <div className="cal-nav">
@@ -626,6 +699,13 @@ function ReportView({ cursor, setCursor, records, byDate, keyword, setKeyword, o
         <button className="btn-secondary" onClick={exportCSV}><Download size={15} /> 匯出備份 CSV</button>
         <button className="btn-secondary" onClick={onPrint}><Printer size={15} /> 列印明細</button>
       </div>
+
+      <div className="action-row">
+        <button className="btn-secondary" onClick={exportBackupJSON}><Download size={15} /> 完整備份（可還原）</button>
+        <button className="btn-secondary" onClick={triggerImport}><FileText size={15} /> 匯入還原</button>
+        <input ref={fileInputRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={handleImportFile} />
+      </div>
+      <div className="backup-hint">完整備份會存下所有月份的資料與品項設定，可用來換手機或救回被清除的資料；「匯出備份 CSV」只有目前這個月、方便用 Excel 開，兩者用途不同。</div>
 
       <div className="report-list">
         {filtered.length === 0 ? (
@@ -1098,6 +1178,7 @@ function GlobalStyle() {
       .search-input { border: none; outline: none; background: transparent; font-size: 13.5px; flex: 1; }
       .action-row { display: flex; gap: 10px; margin-top: 12px; }
       .action-row .btn-secondary { flex: 1; padding: 11px; }
+      .backup-hint { font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; line-height: 1.5; }
       .report-list { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
 
       .empty-hint { text-align: center; color: var(--ink-soft); font-size: 13px; padding: 30px 0; }
